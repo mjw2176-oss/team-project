@@ -394,7 +394,36 @@
             <div class="panel-title"><span class="dot"></span>Input Data</div>
 
             <div>
-                <label>🌐 External HTML (크롤링된 외부 데이터)</label>
+                <label>🔑 Gemini API Key (실제 연동용 - 브라우저 로컬 저장)</label>
+                <input type="password" id="apiKey" placeholder="AIzaSy... (입력하지 않으면 시뮬레이션 모드로 작동)" style="-webkit-text-security: disc;">
+            </div>
+
+            <div style="background: rgba(88,166,255,0.05); border: 1px solid rgba(88,166,255,0.2); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+                <label style="color: var(--accent); font-size: 0.78rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">🌐 URL 자동 크롤링</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="crawlUrl" placeholder="https://example.com" style="flex: 1; border-radius: 8px; font-size: 0.85rem;" autocomplete="off">
+                    <button id="crawlBtn" onclick="crawlSite()" style="
+                        background: linear-gradient(135deg, #1a7f64, #1a6f54);
+                        color: white;
+                        border: 1px solid rgba(63,185,80,0.5);
+                        padding: 10px 18px;
+                        border-radius: 8px;
+                        font-size: 0.85rem;
+                        font-weight: 700;
+                        cursor: pointer;
+                        white-space: nowrap;
+                        transition: all 0.2s;
+                        display: flex; align-items: center; gap: 6px;
+                    ">
+                        <span id="crawlSpinner" class="spinner" style="display:none;"></span>
+                        <span id="crawlBtnText">🔍 크롤링</span>
+                    </button>
+                </div>
+                <div id="crawlInfo" style="display:none; font-size: 0.76rem; font-family: 'JetBrains Mono', monospace; color: var(--text-dim); background: rgba(0,0,0,0.3); border-radius: 6px; padding: 6px 10px;"></div>
+            </div>
+
+            <div>
+                <label>📄 External HTML (크롤링된 외부 데이터)</label>
                 <textarea id="htmlInput" rows="7" placeholder="<html>
   <body>
     <p>정상적인 리뷰 내용입니다.</p>
@@ -446,6 +475,12 @@
                 <div class="result-label" id="resultLabel"></div>
                 <div id="resultText"></div>
             </div>
+
+            <!-- Gemini AI Response Box -->
+            <div class="panel" style="margin-top: 10px; border-color: rgba(163, 113, 247, 0.25); background: rgba(13, 19, 30, 0.95); padding: 16px;" id="aiResponsePanel">
+                <div class="panel-title" style="color: var(--accent-2);"><span class="dot" style="background: var(--accent-2); box-shadow: 0 0 6px var(--accent-2);"></span>🤖 Gemini AI Response</div>
+                <div id="aiResponseText" style="font-size: 0.85rem; line-height: 1.6; min-height: 40px; white-space: pre-wrap; font-family: 'Inter', sans-serif; color: #e1e4e8; margin-top: 10px;">대기 중...</div>
+            </div>
         </div>
 
     </div>
@@ -479,12 +514,90 @@
         }
     };
 
+    // 로컬 스토리지 연동
+    document.addEventListener('DOMContentLoaded', () => {
+        const savedKey = localStorage.getItem('gemini_api_key');
+        if (savedKey) {
+            document.getElementById('apiKey').value = savedKey;
+        }
+    });
+
+    document.getElementById('apiKey').addEventListener('input', e => {
+        localStorage.setItem('gemini_api_key', e.target.value.trim());
+    });
+
     function loadPreset(name) {
         const p = PRESETS[name];
         if (!p) return;
         document.getElementById('htmlInput').value = p.html;
         document.getElementById('userQuery').value = p.query;
     }
+
+    async function crawlSite() {
+        const urlInput = document.getElementById('crawlUrl');
+        const url = urlInput.value.trim();
+        if (!url) {
+            urlInput.focus();
+            return;
+        }
+
+        const crawlBtn = document.getElementById('crawlBtn');
+        const crawlSpinner = document.getElementById('crawlSpinner');
+        const crawlBtnText = document.getElementById('crawlBtnText');
+        const crawlInfo = document.getElementById('crawlInfo');
+        const htmlInput = document.getElementById('htmlInput');
+
+        // 로딩 상태
+        crawlBtn.disabled = true;
+        crawlSpinner.style.display = 'block';
+        crawlBtnText.textContent = '크롤링 중...';
+        crawlInfo.style.display = 'none';
+
+        try {
+            const res = await fetch('/api/crawl', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                // HTML 자동 입력
+                htmlInput.value = data.html;
+
+                // 사이트 정보 칩 표시
+                const sizeKB = (data.size / 1024).toFixed(1);
+                crawlInfo.style.display = 'block';
+                crawlInfo.innerHTML = `
+                    ✅ 크롤링 완료 &nbsp;|&nbsp;
+                    📡 <a href="${data.url}" target="_blank" style="color: var(--accent);">${data.url}</a> &nbsp;|&nbsp;
+                    📦 ${sizeKB} KB &nbsp;|&nbsp;
+                    🔢 상태코드 ${data.status_code}
+                `;
+                crawlInfo.style.color = 'var(--success)';
+
+                // 자동으로 보안 파이프라인 즉시 실행
+                await runPipeline();
+            } else {
+                crawlInfo.style.display = 'block';
+                crawlInfo.textContent = data.error;
+                crawlInfo.style.color = 'var(--danger)';
+            }
+        } catch (e) {
+            crawlInfo.style.display = 'block';
+            crawlInfo.textContent = `❌ 서버 연결 오류: ${e.message}`;
+            crawlInfo.style.color = 'var(--danger)';
+        } finally {
+            crawlBtn.disabled = false;
+            crawlSpinner.style.display = 'none';
+            crawlBtnText.textContent = '🔍 크롤링';
+        }
+    }
+
+    // Enter key on crawl URL field triggers crawl
+    document.getElementById('crawlUrl').addEventListener('keydown', e => {
+        if (e.key === 'Enter') crawlSite();
+    });
 
     function getLogClass(log) {
         if (log.includes('🚨') || log.includes('BLOCK') || log.includes('🔴') || log.includes('❌') || log.includes('🚫'))
@@ -516,6 +629,7 @@
     async function runPipeline() {
         const htmlInput = document.getElementById('htmlInput').value.trim();
         const userQuery = document.getElementById('userQuery').value.trim();
+        const apiKey = document.getElementById('apiKey').value.trim();
         const consoleBox = document.getElementById('consoleBox');
         const resultBox = document.getElementById('resultBox');
         const runBtn = document.getElementById('runBtn');
@@ -523,6 +637,7 @@
         const btnText = document.getElementById('btnText');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
+        const aiResponseText = document.getElementById('aiResponseText');
 
         if (!htmlInput && !userQuery) return;
 
@@ -530,6 +645,7 @@
         consoleBox.innerHTML = '';
         resultBox.style.display = 'none';
         resultBox.className = 'result-box';
+        aiResponseText.textContent = '보안 검증 및 답변 수신 대기 중...';
 
         // Running state
         runBtn.disabled = true;
@@ -543,11 +659,15 @@
             const res = await fetch('/api/process', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ html_input: htmlInput, user_query: userQuery })
+                body: JSON.stringify({ 
+                    html_input: htmlInput, 
+                    user_query: userQuery,
+                    api_key: apiKey
+                })
             });
 
             const data = await res.json();
-            const delay = 350;
+            const delay = 200; // 200ms 속도로 기분 좋게 딜레이 설정
 
             // Stream logs with delay
             for (let i = 0; i < data.logs.length; i++) {
@@ -565,6 +685,10 @@
                     statusDot.className = 'status-dot blocked-dot';
                     statusText.textContent = '차단 완료 — 악성 인젝션 탐지됨';
                     statusText.style.color = 'var(--danger)';
+                    
+                    // 차단 시 Gemini 답변도 경고로 업데이트
+                    aiResponseText.style.color = 'var(--danger)';
+                    aiResponseText.textContent = data.ai_response;
                 } else {
                     resultBox.className = 'result-box safe';
                     document.getElementById('resultLabel').textContent = '✅ PASS — 정상 처리 완료';
@@ -572,6 +696,25 @@
                     statusDot.className = 'status-dot';
                     statusText.textContent = '정상 완료 — 모든 레이어 통과';
                     statusText.style.color = 'var(--success)';
+                    
+                    // 정상 통과 시 답변 출력
+                    aiResponseText.style.color = '#e1e4e8';
+                    
+                    // 타이핑 렌더링
+                    let currentText = "";
+                    let index = 0;
+                    const responseStr = data.ai_response;
+                    aiResponseText.textContent = "";
+                    
+                    function typeEffect() {
+                        if (index < responseStr.length) {
+                            currentText += responseStr.charAt(index);
+                            aiResponseText.textContent = currentText;
+                            index++;
+                            setTimeout(typeEffect, 12);
+                        }
+                    }
+                    typeEffect();
                 }
 
                 // Re-enable button
@@ -589,6 +732,7 @@
             statusDot.className = 'status-dot idle';
             statusText.textContent = '오류 — 서버에 연결할 수 없습니다';
             statusText.style.color = 'var(--danger)';
+            aiResponseText.textContent = '서버 통신 실패';
 
             runBtn.disabled = false;
             spinner.style.display = 'none';
