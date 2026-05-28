@@ -52,12 +52,37 @@ def crawl():
         if len(html) > 50000:
             html = html[:50000] + '\n<!-- [크롤링 데이터가 너무 길어 일부 잘렸습니다] -->'
 
+        # 간단한 보안 분석: DOM sanitization 및 엔진의 필터로 사전 스캔
+        try:
+            current_engine = get_engine()
+            analysis_logs = []
+            visible_text, hidden_text = current_engine.dom_sanitization(html, analysis_logs)
+
+            hidden_safe = True
+            hidden_detect = None
+            if hidden_text.strip():
+                hidden_safe, hidden_detect = current_engine.filter.multi_layer_scan(hidden_text, analysis_logs)
+
+            visible_safe, visible_detect = current_engine.filter.multi_layer_scan(visible_text, analysis_logs)
+
+            overall_safe = hidden_safe and visible_safe
+
+            analysis = {
+                "safe": overall_safe,
+                "logs": analysis_logs,
+                "hidden_preview": hidden_text[:500]
+            }
+
+        except Exception as e:
+            analysis = {"safe": False, "logs": [f"Analysis error: {str(e)}"], "hidden_preview": ""}
+
         return jsonify({
             "success": True,
             "html": html,
             "url": url,
             "status_code": resp.status_code,
-            "size": len(resp.text)
+            "size": len(resp.text),
+            "analysis": analysis
         })
 
     except http_requests.exceptions.Timeout:
