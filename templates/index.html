@@ -367,6 +367,48 @@
             0%,100% { opacity: 1; }
             50% { opacity: 0.4; }
         }
+
+        /* ── Chat Bubbles ── */
+        .chat-bubble {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            word-break: break-all;
+            animation: chatFadeIn 0.25s ease-out forwards;
+        }
+
+        .chat-bubble.user {
+            align-self: flex-end;
+            background: rgba(163, 113, 247, 0.15);
+            border: 1px solid rgba(163, 113, 247, 0.3);
+            color: #d1bcf5;
+            border-bottom-right-radius: 2px;
+        }
+
+        .chat-bubble.ai {
+            align-self: flex-start;
+            background: rgba(88, 166, 255, 0.08);
+            border: 1px solid rgba(88, 166, 255, 0.2);
+            color: #e1e4e8;
+            border-bottom-left-radius: 2px;
+            white-space: pre-wrap;
+        }
+
+        .chat-bubble.blocked {
+            align-self: flex-start;
+            background: rgba(248, 81, 73, 0.08);
+            border: 1px solid rgba(248, 81, 73, 0.35);
+            color: #ff7b72;
+            border-bottom-left-radius: 2px;
+            animation: shake 0.4s ease;
+        }
+
+        @keyframes chatFadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -398,6 +440,30 @@
                 <input type="password" id="apiKey" placeholder="AIzaSy... (입력하지 않으면 시뮬레이션 모드로 작동)" style="-webkit-text-security: disc;">
             </div>
 
+            <div style="background: rgba(88,166,255,0.05); border: 1px solid rgba(88,166,255,0.2); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+                <label style="color: var(--accent); font-size: 0.78rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">🌐 URL 자동 크롤링</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="crawlUrl" placeholder="https://example.com" style="flex: 1; border-radius: 8px; font-size: 0.85rem;" autocomplete="off">
+                    <button id="crawlBtn" onclick="crawlSite()" style="
+                        background: linear-gradient(135deg, #1a7f64, #1a6f54);
+                        color: white;
+                        border: 1px solid rgba(63,185,80,0.5);
+                        padding: 10px 18px;
+                        border-radius: 8px;
+                        font-size: 0.85rem;
+                        font-weight: 700;
+                        cursor: pointer;
+                        white-space: nowrap;
+                        transition: all 0.2s;
+                        display: flex; align-items: center; gap: 6px;
+                    ">
+                        <span id="crawlSpinner" class="spinner" style="display:none;"></span>
+                        <span id="crawlBtnText">🔍 크롤링</span>
+                    </button>
+                </div>
+                <div id="crawlInfo" style="display:none; font-size: 0.76rem; font-family: 'JetBrains Mono', monospace; color: var(--text-dim); background: rgba(0,0,0,0.3); border-radius: 6px; padding: 6px 10px;"></div>
+            </div>
+
             <div>
                 <label>📄 External HTML (크롤링된 외부 데이터)</label>
                 <textarea id="htmlInput" rows="7" placeholder="<html>
@@ -409,9 +475,8 @@
             </div>
 
             <div>
-                <label>💬 User Query + URL (URL 감지시 자동 크롤링)</label>
-                <input type="text" id="userQuery" value="이 내용을 요약해 줘" placeholder="예: https://example.com 요약해줄래? 또는 일반 질문">
-                <div id="urlDetectInfo" style="display:none; margin-top: 8px; font-size: 0.76rem; font-family: 'JetBrains Mono', monospace; color: var(--text-dim); background: rgba(0,0,0,0.3); border-radius: 6px; padding: 6px 10px;"></div>
+                <label>💬 User Query (사용자 질문)</label>
+                <input type="text" id="userQuery" value="이 내용을 요약해 줘" placeholder="예: 내용을 요약해 줘">
             </div>
 
             <div>
@@ -453,10 +518,52 @@
                 <div id="resultText"></div>
             </div>
 
-            <!-- Gemini AI Response Box -->
-            <div class="panel" style="margin-top: 10px; border-color: rgba(163, 113, 247, 0.25); background: rgba(13, 19, 30, 0.95); padding: 16px;" id="aiResponsePanel">
-                <div class="panel-title" style="color: var(--accent-2);"><span class="dot" style="background: var(--accent-2); box-shadow: 0 0 6px var(--accent-2);"></span>🤖 Gemini AI Response</div>
-                <div id="aiResponseText" style="font-size: 0.85rem; line-height: 1.6; min-height: 40px; white-space: pre-wrap; font-family: 'Inter', sans-serif; color: #e1e4e8; margin-top: 10px;">대기 중...</div>
+            <!-- Gemini AI Response Box (Chat Style) -->
+            <div class="panel" style="margin-top: 10px; border-color: rgba(163, 113, 247, 0.25); background: rgba(13, 19, 30, 0.95); padding: 16px; display: flex; flex-direction: column; gap: 12px;" id="aiResponsePanel">
+                <div class="panel-title" style="color: var(--accent-2); margin-bottom: 4px;">
+                    <span class="dot" style="background: var(--accent-2); box-shadow: 0 0 6px var(--accent-2);"></span>🤖 Gemini AI Assistant
+                </div>
+                
+                <!-- Chat Message Container -->
+                <div id="chatContainer" style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    max-height: 350px;
+                    overflow-y: auto;
+                    padding-right: 4px;
+                    scroll-behavior: smooth;
+                    min-height: 80px;
+                ">
+                    <div class="chat-placeholder" style="color: var(--text-dim); font-size: 0.85rem; text-align: center; padding: 20px 0;">대기 중...</div>
+                </div>
+
+                <!-- Chat Input Section (Follow-up) -->
+                <div id="chatInputArea" style="display: none; border-top: 1px solid rgba(163, 113, 247, 0.15); padding-top: 12px; margin-top: 8px;">
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="chatInput" placeholder="보안 영역 데이터를 기반으로 추가 질문을 해보세요..." style="
+                            flex: 1; 
+                            background: rgba(8, 12, 18, 0.9);
+                            border: 1px solid var(--border);
+                            color: var(--text);
+                            border-radius: 8px;
+                            padding: 10px 12px;
+                            font-size: 0.85rem;
+                        " autocomplete="off">
+                        <button id="chatSendBtn" onclick="sendFollowUp()" style="
+                            background: linear-gradient(135deg, #a371f7, #7928ca);
+                            color: white;
+                            border: 1px solid rgba(163, 113, 247, 0.4);
+                            padding: 10px 18px;
+                            border-radius: 8px;
+                            font-size: 0.85rem;
+                            font-weight: 700;
+                            cursor: pointer;
+                            white-space: nowrap;
+                            transition: all 0.2s;
+                        ">전송</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -491,16 +598,12 @@
         }
     };
 
-    // 로컬 스토리지 연동 + URL 자동 감지 이벤트 리스너
+    // 로컬 스토리지 연동
     document.addEventListener('DOMContentLoaded', () => {
         const savedKey = localStorage.getItem('gemini_api_key');
         if (savedKey) {
             document.getElementById('apiKey').value = savedKey;
         }
-
-        // URL 자동 감지 및 크롤링 (800ms 디바운스)
-        const debouncedExtractAndCrawlURL = debounce(extractAndCrawlURL, 800);
-        document.getElementById('userQuery').addEventListener('input', debouncedExtractAndCrawlURL);
     });
 
     document.getElementById('apiKey').addEventListener('input', e => {
@@ -514,26 +617,25 @@
         document.getElementById('userQuery').value = p.query;
     }
 
-    async function extractAndCrawlURL() {
-        const userQueryInput = document.getElementById('userQuery');
-        const queryText = userQueryInput.value.trim();
-        const urlDetectInfo = document.getElementById('urlDetectInfo');
-        const htmlInput = document.getElementById('htmlInput');
-
-        // URL 패턴 정규식: https:// 또는 http:// 로 시작하고 첫 공백까지
-        const urlRegex = /https?:\/\/[^\s]*/g;
-        const urls = queryText.match(urlRegex);
-
-        if (!urls || urls.length === 0) {
-            // URL이 없으면 아무것도 하지 않음
-            urlDetectInfo.style.display = 'none';
+    async function crawlSite() {
+        const urlInput = document.getElementById('crawlUrl');
+        const url = urlInput.value.trim();
+        if (!url) {
+            urlInput.focus();
             return;
         }
 
-        const url = urls[0]; // 첫 번째 URL만 사용
-        urlDetectInfo.textContent = '🔄 URL 감지됨... 크롤링 중...';
-        urlDetectInfo.style.display = 'block';
-        urlDetectInfo.style.color = 'var(--warn)';
+        const crawlBtn = document.getElementById('crawlBtn');
+        const crawlSpinner = document.getElementById('crawlSpinner');
+        const crawlBtnText = document.getElementById('crawlBtnText');
+        const crawlInfo = document.getElementById('crawlInfo');
+        const htmlInput = document.getElementById('htmlInput');
+
+        // 로딩 상태
+        crawlBtn.disabled = true;
+        crawlSpinner.style.display = 'block';
+        crawlBtnText.textContent = '크롤링 중...';
+        crawlInfo.style.display = 'none';
 
         try {
             const res = await fetch('/api/crawl', {
@@ -544,49 +646,42 @@
             const data = await res.json();
 
             if (data.success) {
-                // 서버에서 제공한 보안 분석이 있으면 결과를 HTML 상단에 주석으로 삽입
-                const analysis = data.analysis || { safe: true, logs: [] };
-                const statusText = analysis.safe ? '✅ 보안 검증: 안전' : '🚨 보안 경고: 위험 요소 발견';
-                const analysisLogs = (analysis.logs || []).slice(0, 15).join('\n');
-                const hiddenPreview = analysis.hidden_preview ? ('\n[숨겨진 요소 미리보기]: ' + analysis.hidden_preview) : '';
+                // HTML 자동 입력
+                htmlInput.value = data.html;
 
-                const analysisHeader = `<!-- ${statusText}\n${analysisLogs}${hiddenPreview}\n-->\n\n`;
-
-                // HTML 자동 입력 (분석 주석 + 실제 HTML)
-                htmlInput.value = analysisHeader + data.html;
-
-                // 사용자 질문에서 URL 제거
-                const cleanedQuery = queryText.replace(urlRegex, '').trim();
-                userQueryInput.value = cleanedQuery;
-
-                // 크롤링 성공 메시지 (보안 분석 결과 포함)
+                // 사이트 정보 칩 표시
                 const sizeKB = (data.size / 1024).toFixed(1);
-                urlDetectInfo.style.color = analysis.safe ? 'var(--success)' : 'var(--warn)';
-                urlDetectInfo.innerHTML = `
-                    ${analysis.safe ? '✅ 크롤링 완료' : '⚠️ 크롤링 완료 (위험 감지)'} | 📡 <a href="${data.url}" target="_blank" style="color: var(--accent);">${url}</a> | 📦 ${sizeKB} KB
+                crawlInfo.style.display = 'block';
+                crawlInfo.innerHTML = `
+                    ✅ 크롤링 완료 &nbsp;|&nbsp;
+                    📡 <a href="${data.url}" target="_blank" style="color: var(--accent);">${data.url}</a> &nbsp;|&nbsp;
+                    📦 ${sizeKB} KB &nbsp;|&nbsp;
+                    🔢 상태코드 ${data.status_code}
                 `;
+                crawlInfo.style.color = 'var(--success)';
+
+                // 자동으로 보안 파이프라인 즉시 실행
+                await runPipeline();
             } else {
-                urlDetectInfo.style.color = 'var(--danger)';
-                urlDetectInfo.textContent = `❌ 크롤링 실패: ${data.error}`;
+                crawlInfo.style.display = 'block';
+                crawlInfo.textContent = data.error;
+                crawlInfo.style.color = 'var(--danger)';
             }
         } catch (e) {
-            urlDetectInfo.style.color = 'var(--danger)';
-            urlDetectInfo.textContent = `❌ 서버 오류: ${e.message}`;
+            crawlInfo.style.display = 'block';
+            crawlInfo.textContent = `❌ 서버 연결 오류: ${e.message}`;
+            crawlInfo.style.color = 'var(--danger)';
+        } finally {
+            crawlBtn.disabled = false;
+            crawlSpinner.style.display = 'none';
+            crawlBtnText.textContent = '🔍 크롤링';
         }
     }
 
-    // Debounce 유틸리티
-    function debounce(func, wait) {
-        let timeout;
-        return function executedFunction(...args) {
-            const later = () => {
-                clearTimeout(timeout);
-                func(...args);
-            };
-            clearTimeout(timeout);
-            timeout = setTimeout(later, wait);
-        };
-    }
+    // Enter key on crawl URL field triggers crawl
+    document.getElementById('crawlUrl').addEventListener('keydown', e => {
+        if (e.key === 'Enter') crawlSite();
+    });
 
     function getLogClass(log) {
         if (log.includes('🚨') || log.includes('BLOCK') || log.includes('🔴') || log.includes('❌') || log.includes('🚫'))
@@ -615,6 +710,8 @@
         });
     }
 
+    let chatHistory = [];
+
     async function runPipeline() {
         const htmlInput = document.getElementById('htmlInput').value.trim();
         const userQuery = document.getElementById('userQuery').value.trim();
@@ -626,15 +723,19 @@
         const btnText = document.getElementById('btnText');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
-        const aiResponseText = document.getElementById('aiResponseText');
+        
+        const chatContainer = document.getElementById('chatContainer');
+        const chatInputArea = document.getElementById('chatInputArea');
 
         if (!htmlInput && !userQuery) return;
 
-        // Reset UI
+        // Reset UI & Chat history
+        chatHistory = [];
         consoleBox.innerHTML = '';
         resultBox.style.display = 'none';
         resultBox.className = 'result-box';
-        aiResponseText.textContent = '보안 검증 및 답변 수신 대기 중...';
+        chatContainer.innerHTML = '<div class="chat-placeholder" style="color: var(--text-dim); font-size: 0.85rem; text-align: center; padding: 20px 0;">보안 필터 검증 중...</div>';
+        chatInputArea.style.display = 'none';
 
         // Running state
         runBtn.disabled = true;
@@ -668,7 +769,6 @@
                 resultBox.style.display = 'block';
 
                 if (data.blocked) {
-                    // 차단된 경우
                     resultBox.className = 'result-box blocked';
                     document.getElementById('resultLabel').textContent = '🚫 BLOCKED — 공격 차단됨';
                     document.getElementById('resultText').textContent = data.final_result;
@@ -676,11 +776,12 @@
                     statusText.textContent = '차단 완료 — 악성 인젝션 탐지됨';
                     statusText.style.color = 'var(--danger)';
                     
-                    // 차단 시 응답도 경고로 업데이트
-                    aiResponseText.style.color = 'var(--danger)';
-                    aiResponseText.textContent = data.ai_response;
+                    chatContainer.innerHTML = '';
+                    const bubble = document.createElement('div');
+                    bubble.className = 'chat-bubble blocked';
+                    bubble.textContent = data.ai_response;
+                    chatContainer.appendChild(bubble);
                 } else {
-                    // 정상 통과 시
                     resultBox.className = 'result-box safe';
                     document.getElementById('resultLabel').textContent = '✅ PASS — 정상 처리 완료';
                     document.getElementById('resultText').textContent = data.final_result;
@@ -688,21 +789,38 @@
                     statusText.textContent = '정상 완료 — 모든 레이어 통과';
                     statusText.style.color = 'var(--success)';
                     
-                    // 정상 통과 시 답변 출력
-                    aiResponseText.style.color = '#e1e4e8';
+                    // 첫 번째 프롬프트를 챗 히스토리에 누적
+                    const userPromptText = `Context (안전성이 검증된 외부 데이터):\n${data.final_result}\n\nUser Query: ${userQuery}`;
+                    chatHistory.push({ role: "user", text: userPromptText });
+                    chatHistory.push({ role: "model", text: data.ai_response });
+
+                    chatContainer.innerHTML = '';
                     
-                    // 타이핑 렌더링
+                    // 유저 말풍선 추가
+                    const userBubble = document.createElement('div');
+                    userBubble.className = 'chat-bubble user';
+                    userBubble.textContent = userQuery;
+                    chatContainer.appendChild(userBubble);
+
+                    // AI 말풍선 추가 (타이핑 효과)
+                    const aiBubble = document.createElement('div');
+                    aiBubble.className = 'chat-bubble ai';
+                    chatContainer.appendChild(aiBubble);
+                    
                     let currentText = "";
                     let index = 0;
                     const responseStr = data.ai_response;
-                    aiResponseText.textContent = "";
                     
                     function typeEffect() {
                         if (index < responseStr.length) {
                             currentText += responseStr.charAt(index);
-                            aiResponseText.textContent = currentText;
+                            aiBubble.textContent = currentText;
                             index++;
-                            setTimeout(typeEffect, 12);
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                            setTimeout(typeEffect, 10);
+                        } else {
+                            chatInputArea.style.display = 'block';
+                            document.getElementById('chatInput').focus();
                         }
                     }
                     typeEffect();
@@ -723,13 +841,154 @@
             statusDot.className = 'status-dot idle';
             statusText.textContent = '오류 — 서버에 연결할 수 없습니다';
             statusText.style.color = 'var(--danger)';
-            aiResponseText.textContent = '서버 통신 실패';
+            
+            chatContainer.innerHTML = '';
+            const bubble = document.createElement('div');
+            bubble.className = 'chat-bubble blocked';
+            bubble.textContent = '서버 통신 실패';
+            chatContainer.appendChild(bubble);
 
             runBtn.disabled = false;
             spinner.style.display = 'none';
             btnText.textContent = '▶ Run Security Pipeline';
         }
     }
+
+    async function sendFollowUp() {
+        const chatInput = document.getElementById('chatInput');
+        const query = chatInput.value.trim();
+        if (!query) return;
+
+        chatInput.value = '';
+        chatInput.disabled = true;
+        
+        const chatSendBtn = document.getElementById('chatSendBtn');
+        chatSendBtn.disabled = true;
+
+        const chatContainer = document.getElementById('chatContainer');
+        const consoleBox = document.getElementById('consoleBox');
+        const resultBox = document.getElementById('resultBox');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+
+        // 유저 말풍선 추가
+        const userBubble = document.createElement('div');
+        userBubble.className = 'chat-bubble user';
+        userBubble.textContent = query;
+        chatContainer.appendChild(userBubble);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+
+        consoleBox.innerHTML = '';
+        resultBox.style.display = 'none';
+        statusDot.className = 'status-dot running';
+        statusText.textContent = '후속 질문 필터링 및 추론 중...';
+        statusText.style.color = 'var(--warn)';
+
+        const htmlInput = document.getElementById('htmlInput').value.trim();
+        const apiKey = document.getElementById('apiKey').value.trim();
+
+        try {
+            const res = await fetch('/api/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    html_input: htmlInput,
+                    user_query: query,
+                    api_key: apiKey,
+                    history: chatHistory
+                })
+            });
+
+            const data = await res.json();
+            const delay = 150;
+
+            for (let i = 0; i < data.logs.length; i++) {
+                await appendLog(consoleBox, data.logs[i], i * delay);
+            }
+
+            setTimeout(() => {
+                resultBox.style.display = 'block';
+
+                if (data.blocked) {
+                    resultBox.className = 'result-box blocked';
+                    document.getElementById('resultLabel').textContent = '🚫 BLOCKED — 공격 차단됨';
+                    document.getElementById('resultText').textContent = data.final_result;
+                    statusDot.className = 'status-dot blocked-dot';
+                    statusText.textContent = '차단 완료 — 악성 인젝션 탐지됨';
+                    statusText.style.color = 'var(--danger)';
+
+                    const bubble = document.createElement('div');
+                    bubble.className = 'chat-bubble blocked';
+                    bubble.textContent = data.ai_response;
+                    chatContainer.appendChild(bubble);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                } else {
+                    resultBox.className = 'result-box safe';
+                    document.getElementById('resultLabel').textContent = '✅ PASS — 정상 처리 완료';
+                    document.getElementById('resultText').textContent = data.final_result;
+                    statusDot.className = 'status-dot';
+                    statusText.textContent = '정상 완료 — 모든 레이어 통과';
+                    statusText.style.color = 'var(--success)';
+
+                    // 대화 내역에 추가
+                    chatHistory.push({ role: "user", text: query });
+                    chatHistory.push({ role: "model", text: data.ai_response });
+
+                    const aiBubble = document.createElement('div');
+                    aiBubble.className = 'chat-bubble ai';
+                    chatContainer.appendChild(aiBubble);
+
+                    let currentText = "";
+                    let index = 0;
+                    const responseStr = data.ai_response;
+
+                    function typeEffect() {
+                        if (index < responseStr.length) {
+                            currentText += responseStr.charAt(index);
+                            aiBubble.textContent = currentText;
+                            index++;
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                            setTimeout(typeEffect, 10);
+                        }
+                    }
+                    typeEffect();
+                }
+
+                chatInput.disabled = false;
+                chatSendBtn.disabled = false;
+                chatInput.focus();
+            }, data.logs.length * delay + 150);
+
+        } catch (e) {
+            const div = document.createElement('div');
+            div.className = 'log-line c-danger';
+            div.textContent = `> ❌ 서버 연결 오류: ${e.message}`;
+            consoleBox.appendChild(div);
+
+            statusDot.className = 'status-dot idle';
+            statusText.textContent = '오류 — 서버에 연결할 수 없습니다';
+            statusText.style.color = 'var(--danger)';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'chat-bubble blocked';
+            bubble.textContent = `오류가 발생했습니다: ${e.message}`;
+            chatContainer.appendChild(bubble);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            chatInput.disabled = false;
+            chatSendBtn.disabled = false;
+        }
+    }
+
+    document.getElementById('userQuery').addEventListener('keydown', e => {
+        if (e.key === 'Enter') runPipeline();
+    });
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'chatInput') {
+            sendFollowUp();
+        }
+    });
 </script>
 </body>
 </html>

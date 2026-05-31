@@ -52,37 +52,12 @@ def crawl():
         if len(html) > 50000:
             html = html[:50000] + '\n<!-- [크롤링 데이터가 너무 길어 일부 잘렸습니다] -->'
 
-        # 간단한 보안 분석: DOM sanitization 및 엔진의 필터로 사전 스캔
-        try:
-            current_engine = get_engine()
-            analysis_logs = []
-            visible_text, hidden_text = current_engine.dom_sanitization(html, analysis_logs)
-
-            hidden_safe = True
-            hidden_detect = None
-            if hidden_text.strip():
-                hidden_safe, hidden_detect = current_engine.filter.multi_layer_scan(hidden_text, analysis_logs)
-
-            visible_safe, visible_detect = current_engine.filter.multi_layer_scan(visible_text, analysis_logs)
-
-            overall_safe = hidden_safe and visible_safe
-
-            analysis = {
-                "safe": overall_safe,
-                "logs": analysis_logs,
-                "hidden_preview": hidden_text[:500]
-            }
-
-        except Exception as e:
-            analysis = {"safe": False, "logs": [f"Analysis error: {str(e)}"], "hidden_preview": ""}
-
         return jsonify({
             "success": True,
             "html": html,
             "url": url,
             "status_code": resp.status_code,
-            "size": len(resp.text),
-            "analysis": analysis
+            "size": len(resp.text)
         })
 
     except http_requests.exceptions.Timeout:
@@ -98,6 +73,7 @@ def process():
     html_input = data.get('html_input', '')
     user_query = data.get('user_query', '')
     api_key = data.get('api_key', '')
+    history = data.get('history', [])
     
     current_engine = get_engine()
     # 5-Layer 보안 필터 통과 검증
@@ -125,8 +101,24 @@ def process():
                     http_options=types.HttpOptions(api_version="v1")
                 )
                 
-                # 안전하게 정제된 컨텍스트(HTML 파싱 및 무해화된 텍스트)와 사용자 쿼리를 안전하게 결합
-                prompt = f"Context (안전성이 검증된 외부 데이터):\n{final_result}\n\nUser Query: {user_query}"
+                # 대화 내역이 있으면 history 기반으로 contents 구성, 없으면 단발성 prompt 구성
+                contents = []
+                for msg in history:
+                    contents.append({
+                        "role": msg['role'],
+                        "parts": [{"text": msg['text']}]
+                    })
+                
+                # 현재 차례의 메시지 추가
+                if history:
+                    current_text = user_query
+                else:
+                    current_text = f"Context (안전성이 검증된 외부 데이터):\n{final_result}\n\nUser Query: {user_query}"
+                
+                contents.append({
+                    "role": "user",
+                    "parts": [{"text": current_text}]
+                })
                 
                 # 순차적으로 작동하는 모델을 탐색 (Fallback 메커니즘)
                 for model_name in candidate_models:
@@ -134,10 +126,18 @@ def process():
                     try:
                         response = client.models.generate_content(
                             model=model_name,
-                            contents=prompt
+                            contents=contents
                         )
                         ai_response = response.text
                         logs.append(f"[LLM Pipeline] 🟢 Gemini API({model_name})로부터 성공적으로 응답을 수신했습니다!")
+                        
+                        # 🟢 출력 가드레일 검사 실행
+                        logs.append("[LLM Pipeline] 🔍 AI 답변에 대한 출력 가드레일 검사 중...")
+                        if not current_engine.output_compliance_check(ai_response, logs):
+                            ai_response = "🚨 보안 위험 탐지: AI 답변에 금지된 요소(스크립트, 무단 링크, API 키 등)가 포함되어 출력이 차단되었습니다."
+                            blocked = True
+                            logs.append("[LLM Pipeline] 🔴 차단 상태로 변경 — AI 응답이 출력 규정을 위반했습니다.")
+                        
                         success = True
                         break
                     except Exception as model_err:

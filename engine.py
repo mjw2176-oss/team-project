@@ -71,51 +71,61 @@ ZERO_WIDTH_PATTERN = re.compile(
 # LAYER 2 & 3: 고급 블랙리스트 패턴
 # ============================================================
 
-# 한국어 인젝션 패턴
+# 한국어 인젝션 패턴과 점수 (패턴, 점수)
 KO_INJECTION_PATTERNS = [
-    # 직접 명령 우회
-    r'이전\s*지시\s*(?:를|을|는|무시|삭제|잊)',
-    r'앞\s*(?:의|에서)\s*(?:지시|명령|설정)\s*(?:를|을|는|무시|삭제)',
-    r'(?:시스템|system)\s*(?:프롬프트|prompt)',
-    r'(?:역할|페르소나|persona|role)\s*(?:을|를|변경|바꿔|바꾸)',
-    r'(?:새로운|새)\s*(?:역할|임무|페르소나)',
-    r'지금\s*부터\s*(?:너는|당신은|you\s*are)',
-    r'(?:비밀|숨겨진|hidden)\s*(?:지시|명령|instruction)',
-    r'(?:개발자|관리자|admin|developer)\s*(?:모드|mode)',
-    r'(?:탈옥|탈출|jailbreak|DAN)',
-    r'모든\s*(?:제한|규칙|규정)\s*(?:을|를|무시|해제)',
-    r'(?:프롬프트|prompt)\s*(?:를|을|출력|보여|알려)',
-    r'(?:초기|이전)\s*(?:설정|지시|명령)\s*(?:무시|삭제)',
-    r'지금\s*(?:부터|은|는)\s*(?:다른|새)',
+    # 직접 명령 우회 (임계값 100점 도달로 즉시 차단)
+    (r'이전\s*지시\s*(?:를|을|는|무시|삭제|잊)', 100),
+    (r'앞\s*(?:의|에서)\s*(?:지시|명령|설정)\s*(?:를|을|는|무시|삭제)', 100),
+    (r'지금\s*부터\s*(?:너는|당신은|you\s*are)', 100),
+    (r'모든\s*(?:제한|규칙|규정)\s*(?:을|를|무시|해제)', 100),
+    (r'(?:프롬프트|prompt)\s*(?:를|을|출력|보여|알려)', 100),
+    (r'(?:초기|이전)\s*(?:설정|지시|명령)\s*(?:무시|삭제)', 100),
+    (r'지금부터\s*(?:다른|새로운)\s*(?:지시|명령|역할)', 100),
+    
+    # 중위험군 패턴 (단독으로는 차단 안 됨, 조합되어 100점 이상 시 차단)
+    (r'(?:시스템|system)\s*(?:프롬프트|prompt)', 50),
+    (r'(?:역할|페르소나|persona|role)\s*(?:을|를|변경|바꿔|바꾸)', 50),
+    (r'(?:비밀|숨겨진|hidden)\s*(?:지시|명령|instruction)', 50),
+    (r'(?:개발자|관리자|admin|developer)\s*(?:모드|mode)', 50),
+    (r'탈옥', 100),  # 탈옥(jailbreak)은 그 자체로 명확한 공격 의도
+    
+    # 저위험군 패턴 (다른 의심 문맥과 복합적으로 작용)
+    (r'(?:새로운|새)\s*(?:역할|임무|페르소나)', 30),
 ]
 
-# 영어 인젝션 패턴
+# 영어 인젝션 패턴과 점수
 EN_INJECTION_PATTERNS = [
-    r'ignore\s+(?:all\s+)?(?:previous|prior|above|former)\s+(?:instructions?|prompts?|context)',
-    r'disregard\s+(?:all\s+)?(?:previous|prior|above)',
-    r'forget\s+(?:all\s+)?(?:previous|prior|above|your)',
-    r'(?:new|override|updated?)\s+(?:instructions?|directives?|prompt)',
-    r'you\s+are\s+now\s+(?:a|an|the)',
-    r'act\s+as\s+(?:a|an|the|if)',
-    r'pretend\s+(?:you\s+are|to\s+be)',
-    r'(?:system|sys)\s*(?:prompt|message|instruction)',
-    r'(?:reveal|show|print|output|display)\s+(?:your\s+)?(?:system\s+prompt|instructions?|training)',
-    r'(?:jailbreak|jail\s*break|dan\b)',
-    r'(?:developer|dev|admin)\s+mode',
-    r'do\s+anything\s+now',
-    r'without\s+(?:any\s+)?(?:restrictions?|limitations?|constraints?)',
-    r'(?:override|bypass|circumvent)\s+(?:your\s+)?(?:restrictions?|safety|guidelines?)',
-    r'in\s+this\s+hypothetical',
-    r'roleplay\s+as',
+    # 고위험군 (즉시 차단)
+    (r'ignore\s+(?:all\s+)?(?:previous|prior|above|former)\s+(?:instructions?|prompts?|context)', 100),
+    (r'disregard\s+(?:all\s+)?(?:previous|prior|above)', 100),
+    (r'forget\s+(?:all\s+)?(?:previous|prior|above|your)', 100),
+    (r'(?:new|override|updated?)\s+(?:instructions?|directives?|prompt)', 100),
+    (r'(?:reveal|show|print|output|display)\s+(?:your\s+)?(?:system\s+prompt|instructions?|training)', 100),
+    (r'(?:override|bypass|circumvent)\s+(?:your\s+)?(?:restrictions?|safety|guidelines?)', 100),
+    (r'jailbreak', 100),
+    (r'dan\b', 100),
+    
+    # 중위험군 (40~60점)
+    (r'(?:system|sys)\s*(?:prompt|message|instruction)', 50),
+    (r'(?:developer|dev|admin)\s+mode', 50),
+    (r'do\s+anything\s+now', 60),
+    (r'without\s+(?:any\s+)?(?:restrictions?|limitations?|constraints?)', 50),
+    
+    # 저위험군 (30~40점)
+    (r'you\s+are\s+now\s+(?:a\s+)?chatbot\b', 30),
+    (r'act\s+as\s+(?:a\s+)?(?:helpful\s+)?assistant\b', 30),
+    (r'pretend\s+(?:you\s+are|to\s+be)', 40),
+    (r'in\s+this\s+hypothetical', 40),
+    (r'roleplay\s+as', 40),
 ]
 
 # 구조 탈출 공격 패턴 (태그/마크다운 인젝션)
 STRUCTURAL_INJECTION_PATTERNS = [
-    r'<\s*/?\s*(?:SECURE_[A-Z0-9]+|system|instruction|context|prompt)',
-    r'\[(?:END|STOP|RESET|IGNORE|SYSTEM|INST)\]',
-    r'###\s*(?:New|Override|System|Updated?)\s+(?:Instruction|Prompt|Task)',
-    r'```\s*(?:system|instruction|override)',
-    r'(?:Human|Assistant|User|AI)\s*:\s*(?:ignore|forget|override)',
+    (r'<\s*/?\s*(?:SECURE_[A-Z0-9]+|system|instruction|context|prompt)', 100),
+    (r'\[(?:END|STOP|RESET|IGNORE|SYSTEM|INST)\]', 80),
+    (r'###\s*(?:New|Override|System|Updated?)\s+(?:Instruction|Prompt|Task)', 100),
+    (r'```\s*(?:system|instruction|override)', 100),
+    (r'(?:Human|Assistant|User|AI)\s*:\s*(?:ignore|forget|override)', 100),
 ]
 
 
@@ -126,9 +136,9 @@ class AdvancedFilterEngine:
 
     def __init__(self):
         # 정규식 패턴 사전 컴파일 (성능 최적화)
-        self._ko_patterns = [re.compile(p, re.I | re.UNICODE) for p in KO_INJECTION_PATTERNS]
-        self._en_patterns = [re.compile(p, re.I | re.UNICODE) for p in EN_INJECTION_PATTERNS]
-        self._struct_patterns = [re.compile(p, re.I | re.UNICODE) for p in STRUCTURAL_INJECTION_PATTERNS]
+        self._ko_patterns = [(re.compile(p, re.I | re.UNICODE), score) for p, score in KO_INJECTION_PATTERNS]
+        self._en_patterns = [(re.compile(p, re.I | re.UNICODE), score) for p, score in EN_INJECTION_PATTERNS]
+        self._struct_patterns = [(re.compile(p, re.I | re.UNICODE), score) for p, score in STRUCTURAL_INJECTION_PATTERNS]
 
     def normalize_text(self, text: str) -> str:
         """
@@ -152,16 +162,19 @@ class AdvancedFilterEngine:
 
         return text.strip()
 
-    def _scan_layer(self, normalized: str, patterns: list, layer_name: str, logs: list):
-        """단일 레이어 패턴 스캔. 탐지 시 (True, 패턴) 반환."""
-        for pattern in patterns:
+    def _scan_layer(self, normalized: str, patterns: list, layer_name: str, logs: list) -> tuple[int, list]:
+        """단일 레이어 패턴 스캔. 탐지된 점수 합계와 매칭된 패턴 목록 반환."""
+        layer_score = 0
+        detected_patterns = []
+        for pattern, score in patterns:
             match = pattern.search(normalized)
             if match:
                 logs.append(
-                    f"[{layer_name}] 🚨 악성 패턴 탐지: '{match.group(0)[:40]}' (위치: {match.start()})"
+                    f"[{layer_name}] ⚠️ 의심 패턴 탐지: '{match.group(0)[:40]}' (위치: {match.start()}, 위험 점수: {score})"
                 )
-                return True, match.group(0)
-        return False, None
+                layer_score += score
+                detected_patterns.append(match.group(0))
+        return layer_score, detected_patterns
 
     def multi_layer_scan(self, text: str, logs: list) -> tuple[bool, str | None]:
         """
@@ -169,42 +182,69 @@ class AdvancedFilterEngine:
         반환: (is_safe, detected_pattern)
         """
         normalized = self.normalize_text(text)
+        total_score = 0
+        all_detected = []
 
         # LAYER 2: 한국어 인젝션 패턴
         logs.append("[Guard-L2] 한국어 인젝션 패턴 스캔 중...")
-        detected, pattern = self._scan_layer(normalized, self._ko_patterns, "Guard-L2/KO", logs)
+        score, detected = self._scan_layer(normalized, self._ko_patterns, "Guard-L2/KO", logs)
+        total_score += score
         if detected:
-            return False, pattern
+            all_detected.extend(detected)
 
         # LAYER 3: 영어 인젝션 패턴
         logs.append("[Guard-L3] 영어 인젝션 패턴 스캔 중...")
-        detected, pattern = self._scan_layer(normalized, self._en_patterns, "Guard-L3/EN", logs)
+        score, detected = self._scan_layer(normalized, self._en_patterns, "Guard-L3/EN", logs)
+        total_score += score
         if detected:
-            return False, pattern
+            all_detected.extend(detected)
 
         # LAYER 4: 구조 탈출 공격 패턴
         logs.append("[Guard-L4] 구조 탈출(Structural Injection) 패턴 스캔 중...")
-        detected, pattern = self._scan_layer(normalized, self._struct_patterns, "Guard-L4/STRUCT", logs)
+        score, detected = self._scan_layer(normalized, self._struct_patterns, "Guard-L4/STRUCT", logs)
+        total_score += score
         if detected:
-            return False, pattern
+            all_detected.extend(detected)
 
         # LAYER 5: 엔트로피 기반 희귀 문자 비율 검사 (난독화 우회 탐지)
         logs.append("[Guard-L5] 문자 엔트로피 이상 탐지 중...")
         suspicious_ratio = self._check_suspicious_char_ratio(text)
-        if suspicious_ratio > 0.15:
+        # 만약 비정상 비율이 25%를 초과하는 수준이라면 엔트로피만으로 차단하되,
+        # 15%~25% 사이는 50점의 가중치만 부여하여 다른 위협 요소와 결합될 때만 차단
+        if suspicious_ratio > 0.25:
             logs.append(
-                f"[Guard-L5] 🚨 비정상적으로 높은 비ASCII 특수문자 비율: {suspicious_ratio:.1%} (난독화 의심)"
+                f"[Guard-L5] 🚨 심각하게 높은 비ASCII 특수문자 비율: {suspicious_ratio:.1%} (차단)"
             )
-            return False, f"high_entropy:{suspicious_ratio:.2f}"
+            total_score += 100
+            all_detected.append(f"high_entropy:{suspicious_ratio:.2f}")
+        elif suspicious_ratio > 0.15:
+            logs.append(
+                f"[Guard-L5] ⚠️ 비정상 비ASCII 특수문자 비율 감지: {suspicious_ratio:.1%} (의심 점수 +50)"
+            )
+            total_score += 50
+            all_detected.append(f"moderate_entropy:{suspicious_ratio:.2f}")
 
-        logs.append("[Guard-All] ✅ 모든 레이어 통과. 위협 없음.")
+        # 종합 판정 (임계값 100점 기준)
+        logs.append(f"[Guard-Threat-Assessment] 종합 분석 점수: {total_score}점 (차단 기준: 100점)")
+        if total_score >= 100:
+            primary_reason = all_detected[0] if all_detected else "total_score_limit"
+            logs.append(f"[Pipeline] 🔴 BLOCKED — 누적 위협 점수({total_score}점)가 임계값을 초과했습니다. 감지된 위협: {all_detected}")
+            return False, f"threat_score_{total_score}:{primary_reason}"
+
+        logs.append("[Guard-All] ✅ 모든 레이어 검증 완료. 안전 상태로 진입합니다.")
         return True, None
 
     def _check_suspicious_char_ratio(self, text: str) -> float:
         """한글/영문/숫자/일반 특수문자 외 비율 계산"""
         if not text:
             return 0.0
-        allowed = re.compile(r'[\w\s가-힣ㄱ-ㅎㅏ-ㅣ.,!?\'\"()\[\]{}\-:/]', re.UNICODE)
+        # 표준 QWERTY 자판 특수 기호와 한글/영문/숫자/공백 등 허용 범위 대폭 확장
+        allowed = re.compile(
+            r'[\w\s가-힣ㄱ-ㅎㅏ-ㅣ'
+            r'~!@#$%^&*()_+\-={}\[\]|\\:;"\'<>,.?/`~'
+            r'₩]',
+            re.UNICODE
+        )
         suspicious = sum(1 for ch in text if not allowed.match(ch))
         return suspicious / len(text)
 
