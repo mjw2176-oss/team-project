@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AntiGravity | Intelligent Security Chat</title>
+    <title>IPI CHECK BOT | Intelligent Security Shield</title>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -91,6 +91,77 @@
         }
         .filter-btn:hover { background: rgba(255,255,255,0.1); }
         .filter-btn.active { background: var(--accent-blue); color: black; border-color: var(--accent-blue); }
+        
+        /* 저장된 로그 섹션 */
+        .saved-logs-section {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #3c4043;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .saved-logs-header {
+            font-size: 0.7rem;
+            color: var(--text-sub);
+            margin-bottom: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .saved-log-item {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid #3c4043;
+            border-radius: 6px;
+            padding: 6px 8px;
+            margin-bottom: 4px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .saved-log-item:hover { background: rgba(255,255,255,0.06); border-color: var(--accent-blue); }
+        .saved-log-name {
+            flex: 1;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .saved-log-actions {
+            display: flex;
+            gap: 4px;
+            margin-left: 4px;
+        }
+        .log-btn {
+            background: transparent;
+            border: 1px solid #3c4043;
+            color: var(--text-sub);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.65rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .log-btn:hover { background: rgba(255,255,255,0.1); color: var(--accent-blue); }
+        .save-current-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #4285f4, #9b72cb);
+            color: white;
+            border: none;
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+        }
+        .save-current-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3); }
+        .save-current-btn:active { transform: translateY(0); }
 
         /* Main Chat Area */
         .chat-area { flex: 1; display: flex; flex-direction: column; position: relative; max-width: 900px; margin: 0 auto; width: 100%; }
@@ -144,7 +215,7 @@
 <body>
 
     <div class="sidebar">
-        <div class="logo"><i class="fa-solid fa-shield-halved"></i> AntiGravity AI</div>
+        <div class="logo"><i class="fa-solid fa-shield-virus"></i> IPI CHECK BOT</div>
         
         <!-- 위협 대시보드 -->
         <div class="threat-dashboard">
@@ -175,6 +246,13 @@
             <button class="filter-btn active" data-filter="all" onclick="filterLogs('all')">전체</button>
             <button class="filter-btn" data-filter="threat" onclick="filterLogs('threat')">위협</button>
             <button class="filter-btn" data-filter="info" onclick="filterLogs('info')">정보</button>
+        </div>
+        
+        <!-- 저장된 로그 섹션 -->
+        <div class="saved-logs-section">
+            <button class="save-current-btn" onclick="saveCurrentLogs()">💾 현재 로그 저장</button>
+            <div class="saved-logs-header">📋 저장된 기록</div>
+            <div id="savedLogsList" style="font-size: 0.7rem; color: var(--text-sub);">저장된 로그가 없습니다.</div>
         </div>
         
         <div style="font-size: 0.75rem; color: var(--text-sub); margin-bottom: 8px; letter-spacing: 1px;">SECURITY REAL-TIME LOGS</div>
@@ -217,6 +295,198 @@
             medium: 0
         };
         let currentFilter = 'all';
+        let currentApiKey = '';  // 현재 API 키 저장
+
+        // ==================== 로그 저장/불러오기 함수 ====================
+        function getStorageKey(apiKey) {
+            // API 키를 해시화해서 스토리지 키 생성 (개인정보 보호)
+            const hash = btoa(apiKey).substring(0, 16);  // Base64 인코딩 후 앞 16자
+            return `antiGravity_logs_${hash}`;
+        }
+
+        function saveCurrentLogs() {
+            if(!currentApiKey) {
+                alert('API 키를 입력한 후 로그를 저장하세요.');
+                return;
+            }
+
+            // ==================== 보안 로그 저장 ====================
+            const logs = Array.from(logPanel.querySelectorAll('.log-entry')).map(entry => ({
+                text: entry.textContent,
+                type: entry.dataset.type,
+                html: entry.innerHTML,
+                timestamp: new Date().toISOString()
+            }));
+
+            const threatInfo = {
+                total: threatStats.total,
+                maxSeverity: threatStats.maxSeverity,
+                critical: threatStats.critical,
+                high: threatStats.high,
+                medium: threatStats.medium
+            };
+
+            // ==================== 채팅 히스토리 저장 ====================
+            const chatMessages = Array.from(chatHistory.querySelectorAll('.message')).map(msg => {
+                const isUser = msg.classList.contains('user');
+                let content = '';
+                
+                if(isUser) {
+                    content = msg.querySelector('.bubble')?.textContent || '';
+                } else {
+                    // AI 메시지: 일반 텍스트와 프로세스 박스 분리
+                    const processBox = msg.querySelector('.process-box');
+                    const finalResponse = msg.querySelector('.final-response');
+                    
+                    let mainContent = '';
+                    if(finalResponse) {
+                        mainContent = finalResponse.innerHTML;
+                    }
+                    
+                    content = {
+                        response: mainContent,
+                        processLog: processBox ? processBox.querySelector('.process-content')?.textContent || '' : ''
+                    };
+                }
+                
+                return {
+                    role: isUser ? 'user' : 'ai',
+                    content: content,
+                    timestamp: new Date().toISOString()
+                };
+            });
+
+            // 이전 저장 데이터 로드
+            const storageKey = getStorageKey(currentApiKey);
+            let savedData = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+            // 새로운 저장 항목 추가
+            const timestamp = new Date().toLocaleString('ko-KR');
+            const newLog = {
+                id: Date.now(),
+                timestamp: timestamp,
+                logCount: logs.length,
+                messageCount: chatMessages.length,
+                threatInfo: threatInfo,
+                logs: logs,
+                chatMessages: chatMessages
+            };
+
+            savedData.push(newLog);
+
+            // 최대 50개까지만 저장 (용량 제한)
+            if(savedData.length > 50) {
+                savedData = savedData.slice(-50);
+            }
+
+            localStorage.setItem(storageKey, JSON.stringify(savedData));
+            alert(`✅ 채팅 ${chatMessages.length}개 + 로그 ${logs.length}개가 저장되었습니다.`);
+            loadSavedLogsList();
+        }
+
+        function loadSavedLogsList() {
+            if(!currentApiKey) return;
+
+            const storageKey = getStorageKey(currentApiKey);
+            const savedData = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            const listContainer = document.getElementById('savedLogsList');
+
+            if(savedData.length === 0) {
+                listContainer.innerHTML = '<div style="color: var(--text-sub);">저장된 기록이 없습니다.</div>';
+                return;
+            }
+
+            listContainer.innerHTML = savedData.map((item, idx) => `
+                <div class="saved-log-item">
+                    <div class="saved-log-name" title="${item.timestamp}">
+                        💬${item.messageCount || 0} 📋${item.logCount || 0}｜${item.timestamp}
+                    </div>
+                    <div class="saved-log-actions">
+                        <button class="log-btn" onclick="loadSavedLog(${item.id})" title="불러오기">📂</button>
+                        <button class="log-btn" onclick="deleteSavedLog(${item.id})" title="삭제">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function loadSavedLog(logId) {
+            if(!currentApiKey) return;
+
+            const storageKey = getStorageKey(currentApiKey);
+            const savedData = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            const logItem = savedData.find(item => item.id === logId);
+
+            if(!logItem) {
+                alert('기록을 찾을 수 없습니다.');
+                return;
+            }
+
+            // ==================== 보안 로그 복원 ====================
+            logPanel.innerHTML = '';
+            logItem.logs.forEach(log => {
+                const entry = document.createElement('div');
+                entry.className = 'log-entry ' + log.type;
+                entry.dataset.type = log.type;
+                entry.innerHTML = log.html;
+                logPanel.appendChild(entry);
+            });
+
+            // 위협 통계 복원
+            threatStats = { ...logItem.threatInfo };
+            updateThreatDashboard();
+
+            // ==================== 채팅 히스토리 복원 ====================
+            if(logItem.chatMessages && logItem.chatMessages.length > 0) {
+                chatHistory.innerHTML = '';
+                
+                logItem.chatMessages.forEach(msg => {
+                    if(msg.role === 'user') {
+                        // 사용자 메시지
+                        const userDiv = document.createElement('div');
+                        userDiv.className = 'message user';
+                        userDiv.innerHTML = `<div class="bubble">${msg.content}</div><div class="avatar"><i class="fa-solid fa-user"></i></div>`;
+                        chatHistory.appendChild(userDiv);
+                    } else {
+                        // AI 메시지
+                        const aiDiv = document.createElement('div');
+                        aiDiv.className = 'message ai';
+                        aiDiv.innerHTML = `
+                            <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                            <div class="bubble">
+                                <div class="process-box collapsed" id="currentProcessBox">
+                                    <div class="process-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                                        <span>보안 엔진 분석 기록</span>
+                                        <i class="fa-solid fa-chevron-down"></i>
+                                    </div>
+                                    <div class="process-content">${msg.content.processLog}</div>
+                                </div>
+                                <div class="final-response">${msg.content.response}</div>
+                            </div>
+                        `;
+                        chatHistory.appendChild(aiDiv);
+                    }
+                });
+                
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
+
+            alert(`✅ "${logItem.timestamp}"의 기록이 불러워졌습니다. (💬 ${logItem.messageCount || 0} + 📋 ${logItem.logCount || 0})`);
+        }
+
+        function deleteSavedLog(logId) {
+            if(!currentApiKey) return;
+
+            if(!confirm('이 로그를 삭제하시겠습니까?')) return;
+
+            const storageKey = getStorageKey(currentApiKey);
+            let savedData = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+            savedData = savedData.filter(item => item.id !== logId);
+            localStorage.setItem(storageKey, JSON.stringify(savedData));
+
+            alert('✅ 로그가 삭제되었습니다.');
+            loadSavedLogsList();
+        }
 
         function getSeverityLevel(severity) {
             if(severity >= 95) return 'critical';
@@ -371,6 +641,12 @@
             const apiKey = document.getElementById('apiKey').value.trim();
             if(!message || !apiKey) { alert("메시지와 API Key를 입력하세요."); return; }
 
+            // API 키 업데이트 및 저장된 로그 목록 불러오기
+            if(currentApiKey !== apiKey) {
+                currentApiKey = apiKey;
+                loadSavedLogsList();
+            }
+
             // 사용자 메시지 추가
             const userDiv = document.createElement('div');
             userDiv.className = 'message user';
@@ -472,6 +748,27 @@
 
         sendBtn.onclick = handleSend;
         msgInput.onkeypress = (e) => { if(e.key === 'Enter') handleSend(); };
+        
+        // API 키 입력 필드 이벤트 리스너 - 반응성 개선 (input 이벤트 사용)
+        document.getElementById('apiKey').addEventListener('input', () => {
+            const newApiKey = document.getElementById('apiKey').value.trim();
+            if(newApiKey && newApiKey.length > 10) { // 적정 길이 이상일 때만 로드
+                if(newApiKey !== currentApiKey) {
+                    currentApiKey = newApiKey;
+                    loadSavedLogsList();
+                    addLog("API 키가 인식되었습니다. 저장된 기록을 확인하세요.", "success");
+                }
+            } else {
+                currentApiKey = '';
+                document.getElementById('savedLogsList').innerHTML = '<div style="color: var(--text-sub);">API 키를 입력하세요.</div>';
+            }
+        });
+
+        // 초기 안내 로그 추가
+        window.onload = () => {
+            addLog("AntiGravity v5.0 엔진 대기 중...", "info");
+            addLog("과거 기록을 보려면 상단에 API Key를 입력하세요.", "warning");
+        };
     </script>
 </body>
 </html>
