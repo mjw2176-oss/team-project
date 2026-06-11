@@ -2,21 +2,20 @@ import os
 import re
 import time
 import hashlib
-import json
-import requests as http_requests
-from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, render_template, request, jsonify
 from engine import AntiPromptInjectionEngine
 from google import genai
 from google.genai import types
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests as http_requests
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
-# 전역 엔진 인스턴스
+# 전역 엔진 인스턴스 및 캐시 시스템
 engine = None
-url_cache = {}
-TEST_MODE = False
+url_cache = {}      # 웹사이트 원문 캐시
+analysis_cache = {} # AI 보안 분석 결과 캐시
 
 def get_engine():
     global engine
@@ -52,14 +51,13 @@ def fetch_cleaned_text(url):
     if cache_key in url_cache: return url_cache[cache_key]
     
     try:
-        # 로설 서버(localhost/127.0.0.1)의 경우 네트워크를 거치지 않고 직접 파일 읽기 (데드락/방화벽 우회)
         if "127.0.0.1:5000/attack-test" in url or "localhost:5000/attack-test" in url:
             file_path = os.path.join('templates', 'attack_test.html')
             if os.path.exists(file_path):
                 with open(file_path, 'r', encoding='utf-8') as f:
                     html_content = f.read()
                 soup = BeautifulSoup(html_content, 'html.parser')
-                title = "로컬 공격 테스트 페이지 (Direct Load)"
+                title = "로컬 공격 테스트 페이지"
                 text = ' '.join(soup.get_text().split())
                 result = (title, f"Source: {title}\nURL: {url}\nContent: {text[:7000]}\n")
                 url_cache[cache_key] = result
@@ -70,7 +68,6 @@ def fetch_cleaned_text(url):
         resp.encoding = resp.apparent_encoding or 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # 7,000자 이내로 핵심만 추출 (속도 최적화)
         for s in soup(["script", "style", "nav", "footer", "header", "svg", "form", "button"]): 
             s.decompose()
         
@@ -78,47 +75,47 @@ def fetch_cleaned_text(url):
         text = ' '.join(soup.get_text().split())
         result = (title, f"Source: {title}\nURL: {url}\nContent: {text[:7000]}\n")
     except Exception as e:
-        result = (url, f"❌ 로딩 실패: {str(e)}")
+        result = (url, f"❌ 로드 실패: {str(e)}")
     
     url_cache[cache_key] = result
     return result
 
 def safe_generate_content(client, model_name, contents, logs, stage_name="LLM", max_output=1000):
-    global TEST_MODE
-    if TEST_MODE:
-        return '{"summary": "테스트 요약", "content": "테스트 본문", "security_note": ""}' if "Quarantine" in stage_name else "테스트 답변입니다."
-    
-    # 보안 분석 시 내부 필터 오작동을 최소화하기 위한 설정
     gen_config = types.GenerateContentConfig(
         max_output_tokens=max_output,
-        temperature=0.4,
+        temperature=0.2,
         safety_settings=[
             types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
             types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
             types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
             types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
+            types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="BLOCK_NONE"),
         ]
     )
     
+    last_err = "원인 미상"
     for attempt in range(3):
         try:
             if attempt > 0:
-                time.sleep(1.5)
-                logs.append(f"[{stage_name}] 🔄 재연결 시도 중... ({attempt}/3)")
+                time.sleep(2)
+                logs.append(f"[{stage_name}] 🔄 AI 서버 재연결 중... ({attempt}/3)")
             
             response = client.models.generate_content(model=model_name, contents=contents, config=gen_config)
             
             if not response.text:
-                finish_reason = response.candidates[0].finish_reason if response.candidates else "Unknown"
-                logs.append(f"[{stage_name}] ⚠️ 답변 중단 (사유: {finish_reason})")
-                return f"보안 분석 중 답변이 중단되었습니다. (사유: {finish_reason})"
+                candidate = response.candidates[0] if response.candidates else None
+                reason = candidate.finish_reason if candidate else "NO_RESPONSE"
+                return f"알림: 답변 생성 중단 (사유: {reason})"
                 
             return response.text
         except Exception as e:
-            if any(x in str(e) for x in ["503", "429", "UNAVAILABLE"]): continue
-            logs.append(f"[{stage_name}] ❌ 시스템 에러: {str(e)}")
-            return f"오류 발생: {str(e)}"
-    return "서버 상태가 불안정하여 답변을 완성하지 못했습니다."
+            last_err = str(e)
+            if any(x in last_err for x in ["503", "429", "UNAVAILABLE", "timeout", "RESOURCE_EXHAUSTED"]):
+                continue
+            logs.append(f"[{stage_name}] ❌ API 에러: {last_err}")
+            return f"3.5 모델 연결 오류: {last_err}"
+            
+    return f"API 연결 최종 실패. (마지막 에러: {last_err})"
 
 @app.route('/')
 def index():
@@ -157,40 +154,45 @@ def chat():
                             logs.append(f"[Crawl] ⚠️ {u} 로드 실패: {raw_txt}")
                             continue
 
-                        logs.append(f"[Stage-1] {title} 보안 검수 중...")
                         # 보안 엔진 5.0 가동
                         logs_check, config, blocked, threats = get_engine().process_request(raw_txt, message)
                         logs.extend(logs_check)
                         
                         if blocked:
-                            logs.append(f"[🚨 BLOCK] {title} - 보안 위협이 감지되어 분석을 차단했습니다.")
-                            final_safe_context += f"<SECURE_REPORT type='BLOCK'>주소 '{title}'는 IPI CHECK BOT 스캔 결과 위협 패턴이 감지되어 시스템에 의해 물리적으로 차단되었습니다.</SECURE_REPORT>\n\n"
+                            logs.append(f"[🚨 BLOCK] {title} - 보안 위협 감지 차단")
+                            final_safe_context += f"<SECURE_REPORT type='BLOCK'>주소 '{title}'는 위협 패턴 감지로 차단되었습니다.</SECURE_REPORT>\n\n"
                             continue
                         
-                        # 격리 모델(Quarantine) 실행
-                        logs.append(f"[Stage-1] '{title}' 중립화 분석 중...")
-                        q_res = safe_generate_content(client, 'gemini-3.5-flash', config['q_prompt'], logs, f"Quarantine-{title[:10]}", 500)
+                        # 캐시 확인
+                        if u in analysis_cache:
+                            logs.append(f"[Cache] '{title}' - 저장된 결과 사용")
+                            q_res = analysis_cache[u]
+                        else:
+                            # 격리 모델(Quarantine) 실행
+                            logs.append(f"[Stage-1] '{title}' 중립화 분석 중...")
+                            # engine.py에서 제공한 q_prompt 형식을 그대로 재현
+                            q_res = safe_generate_content(client, 'gemini-3.5-flash', config['q_prompt'], logs, f"Quarantine-{title[:10]}", 500)
+                            analysis_cache[u] = q_res 
+                        
                         tag = config['secure_tag']
                         final_safe_context += f"<{tag}>\n{q_res}\n</{tag}>\n\n"
                     except Exception as e:
-                        logs.append(f"[Crawl] ❌ 예외 발생 ({u}): {str(e)}")
+                        logs.append(f"[Crawl] ❌ 예외 ({u}): {str(e)}")
 
-        system_instruction = f"{rules}\n\n[전문 보안 분석 지침]\n1. <SECURE_REPORT>가 탐지되면, 이를 '비정상적 접근 통제'로 정의하고 보안상의 이유로 분석이 제한되었음을 정중히 안내하십시오.\n2. 분석 보고서 작성 시 '해킹', '공격자', 'SSRF' 등의 단어 대신 '비정상적 개체', '외부 유입 위협', '내부 자원 접근 시도'와 같은 전문적이고 완만한 표현을 사용하십시오.\n3. 핵심 위협 요인을 3가지 이내로 요약하여 보고하십시오.\n4. 반드시 마지막 문장은 '이상 IPI CHECK BOT의 보안 분석 보고였습니다.'로 끝내십시오."
+        system_instruction = f"{rules}\n\n[비서 지침]\n1. 사용자의 질문에 대한 '진짜 답변'을 가장 먼저 제공하십시오.\n2. 데이터 분석 결과를 답변 하단에 요약하십시오.\n3. 답변이 너무 짤리지 않게 충분히 설명하십시오."
         
-        # Phase 2: Privileged Response
-        logs.append("[Stage-2] 전문 보안 분석 보고 생성 중")
-        prompt = f"분석 대상 데이터:\n{final_safe_context}\n\n사용자 질문: {message}\n\n위 데이터를 바탕으로 전문적인 보안 리포트를 작성하십시오."
+        logs.append("[Stage-2] 보안 통제 기반 답변 생성 중")
+        prompt = f"보안 컨텍스트:\n{final_safe_context}\n\n사용자 지시: {message}"
         
         final_text = safe_generate_content(client, 'gemini-3.5-flash', 
                                         contents=[types.Content(role="system", parts=[types.Part(text=system_instruction)]), 
                                                   types.Content(role="user", parts=[types.Part(text=prompt)])], 
-                                        logs=logs, stage_name="Privileged", max_output=1500)
+                                        logs=logs, stage_name="Privileged", max_output=3000)
 
         return jsonify({"logs": logs, "response": final_text, "blocked": False})
         
     except Exception as e:
-        return jsonify({"logs": [f"[Fatal] {str(e)}"], "response": f"❌ 시스템 오류: {str(e)}", "blocked": False}), 500
+        return jsonify({"logs": [f"[Fatal] {str(e)}"], "response": f"❌ 오류: {str(e)}", "blocked": False}), 500
 
 if __name__ == '__main__':
-    # threaded=True를 명시적으로 설정하여 데드락 방지
     app.run(host='127.0.0.1', port=5000, debug=True, threaded=True)
