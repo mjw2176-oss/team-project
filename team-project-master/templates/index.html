@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPI CHECK BOT | Intelligent Security Shield</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #131314;
+            --sidebar-color: #1e1f20;
+            --text-main: #e3e3e3;
+            --text-sub: #b1b1b1;
+            --accent-blue: #8ab4f8;
+            --border-color: #3c4043;
+            --input-bg: #1e1f20;
+            --my-msg-bg: #2d2d2d;
+            --gemini-gradient: linear-gradient(70deg, #4285f4, #9b72cb, #d96570);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Google Sans', sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); display: flex; height: 100vh; overflow: hidden; }
+
+        /* Sidebar */
+        .sidebar { width: 360px; background-color: var(--sidebar-color); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 24px; }
+        .logo { font-size: 1.4rem; font-weight: 700; background: var(--gemini-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        
+        /* 위협 대시보드 */
+        .threat-dashboard {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #3c4043;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 0.75rem;
+        }
+        .threat-stat { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; }
+        .threat-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+        .threat-critical { background: rgba(234, 67, 53, 0.3); color: #ea4335; }
+        .threat-high { background: rgba(251, 188, 4, 0.3); color: #fbbf04; }
+        .threat-medium { background: rgba(51, 182, 121, 0.3); color: #33b679; }
+        .threat-safe { background: rgba(132, 182, 248, 0.3); color: #8ab4f8; }
+        
+        /* 대시보드 강조 애니메이션 */
+        .threat-dashboard.alert {
+            animation: dashboardPulse 0.5s ease-in-out;
+            border-color: #ea4335;
+            background: rgba(234, 67, 53, 0.1);
+        }
+        @keyframes dashboardPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(234, 67, 53, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(234, 67, 53, 0); }
+        }
+        
+        .log-panel { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 0.75rem; font-family: monospace; }
+        .log-entry { 
+            padding: 8px 12px; 
+            border-radius: 8px; 
+            background: rgba(255,255,255,0.03);
+            border-left: 3px solid #3c4043;
+            transition: all 0.2s;
+        }
+        .log-entry:hover { background: rgba(255,255,255,0.06); }
+        .log-entry.critical { border-left-color: #ea4335; background: rgba(234, 67, 53, 0.1); }
+        .log-entry.high { border-left-color: #fbbf04; background: rgba(251, 188, 4, 0.1); }
+        .log-entry.medium { border-left-color: #33b679; background: rgba(51, 182, 121, 0.1); }
+        .log-entry.info { border-left-color: #8ab4f8; color: #8ab4f8; }
+        .log-entry.success { border-left-color: #33b679; color: #33b679; }
+        .log-entry.warning { border-left-color: #fbbf04; color: #fbbf04; }
+        .log-entry.error { border-left-color: #ea4335; color: #ea4335; }
+        
+        /* 로그 필터 */
+        .log-filter { 
+            display: flex; 
+            gap: 4px; 
+            margin-bottom: 12px; 
+            flex-wrap: wrap;
+        }
+        .filter-btn {
+            padding: 4px 8px;
+            border: 1px solid #3c4043;
+            background: rgba(255,255,255,0.05);
+            color: var(--text-sub);
+            border-radius: 4px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover { background: rgba(255,255,255,0.1); }
+        .filter-btn.active { background: var(--accent-blue); color: black; border-color: var(--accent-blue); }
+        
+        /* 저장된 로그 섹션 */
+        .saved-logs-section {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #3c4043;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .saved-logs-header {
+            font-size: 0.7rem;
+            color: var(--text-sub);
+            margin-bottom: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .saved-log-item {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid #3c4043;
+            border-radius: 6px;
+            padding: 6px 8px;
+            margin-bottom: 4px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .saved-log-item:hover { background: rgba(255,255,255,0.06); border-color: var(--accent-blue); }
+        .saved-log-name {
+            flex: 1;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .saved-log-actions {
+            display: flex;
+            gap: 4px;
+            margin-left: 4px;
+        }
+        .log-btn {
+            background: transparent;
+            border: 1px solid #3c4043;
+            color: var(--text-sub);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.65rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .log-btn:hover { background: rgba(255,255,255,0.1); color: var(--accent-blue); }
+        .save-current-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #4285f4, #9b72cb);
+            color: white;
+            border: none;
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+        }
+        .save-current-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3); }
+        .save-current-btn:active { transform: translateY(0); }
+
+        /* Main Chat Area */
+        .chat-area { flex: 1; display: flex; flex-direction: column; position: relative; max-width: 900px; margin: 0 auto; width: 100%; }
+        #chatHistory { flex: 1; overflow-y: auto; padding: 40px; display: flex; flex-direction: column; gap: 32px; }
+
+        .message { display: flex; gap: 16px; animation: fadeIn 0.4s ease; width: 100%; }
+        .message.user { justify-content: flex-end; }
+        .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+        .ai .avatar { background: var(--gemini-gradient); color: white; }
+        .user .avatar { background: #555; color: white; order: 2; }
+
+        .bubble { max-width: 85%; line-height: 1.6; font-size: 1.05rem; }
+        .user .bubble { background-color: var(--my-msg-bg); padding: 12px 20px; border-radius: 20px; border-bottom-right-radius: 4px; }
+        
+        /* Thinking Process UI */
+        .process-box {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid #3c4043;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        .process-header {
+            padding: 8px 16px;
+            font-size: 0.85rem;
+            color: var(--accent-blue);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .process-header:hover { background: rgba(255,255,255,0.08); }
+        .process-content { padding: 8px 16px; font-size: 0.8rem; color: var(--text-sub); border-top: 1px solid #333; display: block; }
+        .process-box.collapsed .process-content { display: none; }
+
+        /* Input */
+        .input-container { padding: 40px; }
+        .input-wrapper { background-color: var(--input-bg); border-radius: 32px; padding: 10px 24px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--border-color); }
+        #msgInput { flex: 1; background: transparent; border: none; color: white; font-size: 1.1rem; padding: 12px 0; outline: none; }
+        .btn-send { background: none; border: none; color: var(--accent-blue); font-size: 1.4rem; cursor: pointer; }
+
+        .apiKey-float { position: absolute; top: 20px; right: 20px; }
+        .apiKey-float input { background: #1e1f20; border: 1px solid #3c4043; color: white; padding: 8px 16px; border-radius: 12px; font-size: 0.8rem; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .loading-shimmer { border-radius: 12px; height: 16px; background: linear-gradient(90deg, #1e1f20 25%, #333 50%, #1e1f20 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; margin-bottom: 8px; }
+        @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="logo"><i class="fa-solid fa-shield-virus"></i> IPI CHECK BOT</div>
+        
+        <!-- 위협 대시보드 -->
+        <div class="threat-dashboard">
+            <div class="threat-stat">
+                <span>총 탐지:</span>
+                <span id="threatCount" class="threat-badge threat-critical">0</span>
+            </div>
+            <div class="threat-stat">
+                <span>최고 위험도:</span>
+                <span id="maxSeverity" class="threat-badge threat-safe">0/100</span>
+            </div>
+            <div class="threat-stat">
+                <span>🔴 심각:</span>
+                <span id="criticalCount" style="color: #ea4335;">0</span>
+            </div>
+            <div class="threat-stat">
+                <span>🟡 높음:</span>
+                <span id="highCount" style="color: #fbbf04;">0</span>
+            </div>
+            <div class="threat-stat">
+                <span>🟢 보통:</span>
+                <span id="mediumCount" style="color: #33b679;">0</span>
+            </div>
+        </div>
+        
+        <!-- 로그 필터 -->
+        <div class="log-filter">
+            <button class="filter-btn active" data-filter="all" onclick="filterLogs('all')">전체</button>
+            <button class="filter-btn" data-filter="threat" onclick="filterLogs('threat')">위협</button>
+            <button class="filter-btn" data-filter="info" onclick="filterLogs('info')">정보</button>
+        </div>
+        
+        <!-- 저장된 로그 섹션 -->
+        <div class="saved-logs-section">
+            <button class="save-current-btn" onclick="saveCurrentLogs()">💾 현재 로그 저장</button>
+            <div class="saved-logs-header">📋 저장된 기록</div>
+            <div id="savedLogsList" style="font-size: 0.7rem; color: var(--text-sub);">저장된 로그가 없습니다.</div>
+        </div>
+        
+        <div style="font-size: 0.75rem; color: var(--text-sub); margin-bottom: 8px; letter-spacing: 1px;">SECURITY REAL-TIME LOGS</div>
+        <div class="log-panel" id="logPanel">
+            <div class="log-entry info">시스템이 준비되었습니다.</div>
+        </div>
+        <div style="margin-top: 16px; color: var(--text-sub); font-size: 0.7rem;">&copy; 2026 AntiGravity Security Lab</div>
+    </div>
+
+    <div class="chat-area">
+        <div class="apiKey-float" title="Gemini API Key를 입력하세요"><input type="password" id="apiKey" placeholder="Gemini API Key"></div>
+        
+        <div id="chatHistory">
+            <!-- 초기 환영 메시지 -->
+            <div class="message ai">
+                <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                <div class="bubble">안녕하세요! URL을 입력하시거나 질문을 하세요. 여러 사이트를 한 번에 분석할 수도 있습니다.</div>
+            </div>
+        </div>
+        <div class="input-container">
+            <div class="input-wrapper">
+                <input type="text" id="msgInput" placeholder="URL 포함 메시지 입력..." autocomplete="off">
+                <button class="btn-send" id="sendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatHistory = document.getElementById('chatHistory');
+        const msgInput = document.getElementById('msgInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const logPanel = document.getElementById('logPanel');
+        
+        // 위협 통계
+        let threatStats = {
+            total: 0,
+            maxSeverity: 0,
+            critical: 0,
+            high: 0,
+            medium: 0
+        };
+        let currentFilter = 'all';
+        let currentApiKey = '';  // 현재 API 키 저장
+
+        // ==================== 로그 저장/불러오기 함수 ====================
+        function getStorageKey(apiKey) {
+            // API 키를 해시화해서 스토리지 키 생성 (개인정보 보호)
+            const hash = btoa(apiKey).substring(0, 16);  // Base64 인코딩 후 앞 16자
+            return `antiGravity_logs_${hash}`;
+        }
+
+        function saveCurrentLogs() {
+            if(!currentApiKey) {
+                alert('API 키를 입력한 후 로그를 저장하세요.');
+                return;
+            }
+
+            // ==================== 보안 로그 저장 ====================
+            const logs = Array.from(logPanel.querySelectorAll('.log-entry')).map(entry => ({
+                text: entry.textContent,
+                type: entry.dataset.type,
+                html: entry.innerHTML,
+                timestamp: new Date().toISOString()
+            }));
+
+            const threatInfo = {
+                total: threatStats.total,
+                maxSeverity: threatStats.maxSeverity,
+                critical: threatStats.critical,
+                high: threatStats.high,
+                medium: threatStats.medium
+            };
+
+            // ==================== 채팅 히스토리 저장 ====================
+            const chatMessages = Array.from(chatHistory.querySelectorAll('.message')).map(msg => {
+                const isUser = msg.classList.contains('user');
+                let content = '';
+                
+                if(isUser) {
+                    content = msg.querySelector('.bubble')?.textContent || '';
+                } else {
+                    // AI 메시지: 일반 텍스트와 프로세스 박스 분리
+                    const processBox = msg.querySelector('.process-box');
+                    const finalResponse = msg.querySelector('.final-response');
+                    
+                    let mainContent = '';
+                    if(finalResponse) {
+                        mainContent = finalResponse.innerHTML;
+                    }
+                    
+                    content = {
+                        response: mainContent,
+                        processLog: processBox ? processBox.querySelector('.process-content')?.textContent || '' : ''
+                    };
+                }
+                
+                return {
+                    role: isUser ? 'user' : 'ai',
+                    content: content,
+                    timestamp: new Date().toISOString()
+                };
+            });
+
+            // 이전 저장 데이터 로드
+            const storageKey = getStorageKey(currentApiKey);
+            let savedData = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+            // 새로운 저장 항목 추가
+            const timestamp = new Date().toLocaleString('ko-KR');
+            const newLog = {
+                id: Date.now(),
+                timestamp: timestamp,
+                logCount: logs.length,
+                messageCount: chatMessages.length,
+                threatInfo: threatInfo,
+                logs: logs,
+                chatMessages: chatMessages
+            };
+
+            savedData.push(newLog);
+
+            // 최대 50개까지만 저장 (용량 제한)
+            if(savedData.length > 50) {
+                savedData = savedData.slice(-50);
+            }
+
+            localStorage.setItem(storageKey, JSON.stringify(savedData));
+            alert(`✅ 채팅 ${chatMessages.length}개 + 로그 ${logs.length}개가 저장되었습니다.`);
+            loadSavedLogsList();
+        }
+
+        function loadSavedLogsList() {
+            if(!currentApiKey) return;
+
+            const storageKey = getStorageKey(currentApiKey);
+            const savedData = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            const listContainer = document.getElementById('savedLogsList');
+
+            if(savedData.length === 0) {
+                listContainer.innerHTML = '<div style="color: var(--text-sub);">저장된 기록이 없습니다.</div>';
+                return;
+            }
+
+            listContainer.innerHTML = savedData.map((item, idx) => `
+                <div class="saved-log-item">
+                    <div class="saved-log-name" title="${item.timestamp}">
+                        💬${item.messageCount || 0} 📋${item.logCount || 0}｜${item.timestamp}
+                    </div>
+                    <div class="saved-log-actions">
+                        <button class="log-btn" onclick="loadSavedLog(${item.id})" title="불러오기">📂</button>
+                        <button class="log-btn" onclick="deleteSavedLog(${item.id})" title="삭제">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function loadSavedLog(logId) {
+            if(!currentApiKey) return;
+
+            const storageKey = getStorageKey(currentApiKey);
+            const savedData = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            const logItem = savedData.find(item => item.id === logId);
+
+            if(!logItem) {
+                alert('기록을 찾을 수 없습니다.');
+                return;
+            }
+
+            // ==================== 보안 로그 복원 ====================
+            logPanel.innerHTML = '';
+            logItem.logs.forEach(log => {
+                const entry = document.createElement('div');
+                entry.className = 'log-entry ' + log.type;
+                entry.dataset.type = log.type;
+                entry.innerHTML = log.html;
+                logPanel.appendChild(entry);
+            });
+
+            // 위협 통계 복원
+            threatStats = { ...logItem.threatInfo };
+            updateThreatDashboard();
+
+            // ==================== 채팅 히스토리 복원 ====================
+            if(logItem.chatMessages && logItem.chatMessages.length > 0) {
+                chatHistory.innerHTML = '';
+                
+                logItem.chatMessages.forEach(msg => {
+                    if(msg.role === 'user') {
+                        // 사용자 메시지
+                        const userDiv = document.createElement('div');
+                        userDiv.className = 'message user';
+                        userDiv.innerHTML = `<div class="bubble">${msg.content}</div><div class="avatar"><i class="fa-solid fa-user"></i></div>`;
+                        chatHistory.appendChild(userDiv);
+                    } else {
+                        // AI 메시지
+                        const aiDiv = document.createElement('div');
+                        aiDiv.className = 'message ai';
+                        aiDiv.innerHTML = `
+                            <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                            <div class="bubble">
+                                <div class="process-box collapsed" id="currentProcessBox">
+                                    <div class="process-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                                        <span>보안 엔진 분석 기록</span>
+                                        <i class="fa-solid fa-chevron-down"></i>
+                                    </div>
+                                    <div class="process-content">${msg.content.processLog}</div>
+                                </div>
+                                <div class="final-response">${msg.content.response}</div>
+                            </div>
+                        `;
+                        chatHistory.appendChild(aiDiv);
+                    }
+                });
+                
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
+
+            alert(`✅ "${logItem.timestamp}"의 기록이 불러워졌습니다. (💬 ${logItem.messageCount || 0} + 📋 ${logItem.logCount || 0})`);
+        }
+
+        function deleteSavedLog(logId) {
+            if(!currentApiKey) return;
+
+            if(!confirm('이 로그를 삭제하시겠습니까?')) return;
+
+            const storageKey = getStorageKey(currentApiKey);
+            let savedData = JSON.parse(localStorage.getItem(storageKey) || '[]');
+
+            savedData = savedData.filter(item => item.id !== logId);
+            localStorage.setItem(storageKey, JSON.stringify(savedData));
+
+            alert('✅ 로그가 삭제되었습니다.');
+            loadSavedLogsList();
+        }
+
+        function getSeverityLevel(severity) {
+            if(severity >= 95) return 'critical';
+            if(severity >= 85) return 'high';
+            if(severity >= 70) return 'medium';
+            return 'info';
+        }
+
+        function updateThreatDashboard() {
+            const dashboard = document.querySelector('.threat-dashboard');
+            document.getElementById('threatCount').textContent = threatStats.total;
+            document.getElementById('maxSeverity').textContent = threatStats.maxSeverity + '/100';
+            document.getElementById('criticalCount').textContent = threatStats.critical;
+            document.getElementById('highCount').textContent = threatStats.high;
+            document.getElementById('mediumCount').textContent = threatStats.medium;
+            
+            // 최대 심각도에 따라 배지 색상 변경
+            const badge = document.getElementById('maxSeverity');
+            badge.className = 'threat-badge threat-safe';
+            
+            if(threatStats.maxSeverity >= 95) {
+                badge.className = 'threat-badge threat-critical';
+                dashboard.classList.add('alert');
+            } else if(threatStats.maxSeverity >= 85) {
+                badge.className = 'threat-badge threat-high';
+                dashboard.classList.add('alert');
+            } else if(threatStats.maxSeverity >= 70) {
+                badge.className = 'threat-badge threat-medium';
+            } else {
+                dashboard.classList.remove('alert');
+            }
+        }
+
+        function addLog(msg, type = 'info', data = null) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry ' + type;
+            entry.dataset.type = type;
+            
+            const timeStr = new Date().toLocaleTimeString();
+            
+            if(type === 'threat' && data) {
+                // 위협 정보 구조화
+                const severity = data.severity || 0;
+                const severityLevel = getSeverityLevel(severity);
+                
+                // 대시보드 업데이트
+                threatStats.total++;
+                threatStats.maxSeverity = Math.max(threatStats.maxSeverity, severity);
+                if(severity >= 95) threatStats.critical++;
+                else if(severity >= 85) threatStats.high++;
+                else if(severity >= 70) threatStats.medium++;
+                
+                // 위협 카드 생성 (더 자세한 정보)
+                let severityIcon = '🔴';
+                let severityText = '심각';
+                if(severity >= 95) {
+                    severityIcon = '🔴';
+                    severityText = '심각';
+                } else if(severity >= 85) {
+                    severityIcon = '🟡';
+                    severityText = '높음';
+                } else if(severity >= 70) {
+                    severityIcon = '🟢';
+                    severityText = '보통';
+                }
+                
+                entry.innerHTML = `
+                    <div style="padding: 2px 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; gap: 8px;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: 700; color: #fff; font-size: 0.8rem;">
+                                    ${severityIcon} ${data.name}
+                                </div>
+                                <div style="font-size: 0.68rem; color: #aaa; margin-top: 3px;">
+                                    🔹 유형: ${data.attack_type}
+                                </div>
+                                <div style="font-size: 0.68rem; color: #999; margin-top: 2px;">
+                                    📝 ${data.description}
+                                </div>
+                            </div>
+                            <div style="text-align: right; white-space: nowrap;">
+                                <div style="font-size: 0.65rem; color: #aaa;">${timeStr}</div>
+                                <span class="threat-badge threat-${severityLevel}" style="display: block; margin-top: 3px; font-size: 0.7rem;">${severity}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                updateThreatDashboard();
+            } else {
+                entry.textContent = `[${timeStr}] ${msg}`;
+            }
+            
+            logPanel.appendChild(entry);
+            logPanel.scrollTop = logPanel.scrollHeight;
+            
+            // 필터링 적용
+            filterLogs(currentFilter);
+        }
+
+        function filterLogs(filter) {
+            currentFilter = filter;
+            const entries = document.querySelectorAll('.log-entry');
+            
+            // 필터 버튼 업데이트
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === filter);
+            });
+            
+            entries.forEach(entry => {
+                if(filter === 'all') {
+                    entry.style.display = '';
+                } else if(filter === 'threat') {
+                    entry.style.display = entry.dataset.type === 'threat' ? '' : 'none';
+                } else if(filter === 'info') {
+                    entry.style.display = (entry.dataset.type === 'info' || entry.dataset.type === 'success' || entry.dataset.type === 'warning') ? '' : 'none';
+                }
+            });
+        }
+
+        function createAiBubble() {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message ai';
+            
+            msgDiv.innerHTML = `
+                <div class="avatar"><i class="fa-solid fa-robot"></i></div>
+                <div class="bubble">
+                    <div class="process-box" id="currentProcessBox">
+                        <div class="process-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                            <span>보안 엔진 분석 기록</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                        <div class="process-content" id="processContent">데이터 분석을 시작합니다...</div>
+                    </div>
+                    <div class="final-response" id="finalResponse">
+                        <div class="loading-shimmer" style="width: 200px"></div>
+                        <div class="loading-shimmer" style="width: 150px"></div>
+                    </div>
+                </div>
+            `;
+            chatHistory.appendChild(msgDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            return {
+                processContent: msgDiv.querySelector('#processContent'),
+                finalResponse: msgDiv.querySelector('#finalResponse'),
+                processBox: msgDiv.querySelector('#currentProcessBox')
+            };
+        }
+
+        async function handleSend() {
+            const message = msgInput.value.trim();
+            const apiKey = document.getElementById('apiKey').value.trim();
+            if(!message || !apiKey) { alert("메시지와 API Key를 입력하세요."); return; }
+
+            // API 키 업데이트 및 저장된 로그 목록 불러오기
+            if(currentApiKey !== apiKey) {
+                currentApiKey = apiKey;
+                loadSavedLogsList();
+            }
+
+            // 사용자 메시지 추가
+            const userDiv = document.createElement('div');
+            userDiv.className = 'message user';
+            userDiv.innerHTML = `<div class="bubble">${message}</div><div class="avatar"><i class="fa-solid fa-user"></i></div>`;
+            chatHistory.appendChild(userDiv);
+            msgInput.value = '';
+
+            const ui = createAiBubble();
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message, api_key: apiKey }),
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                const data = await res.json();
+
+                // 프로세스 로그 업데이트 (위협 정보 파싱)
+                if(data.logs) {
+                    ui.processContent.innerHTML = data.logs.map(l => {
+                        if(l.includes('🚨')) {
+                            // 위협 탐지 로그
+                            return `<div style="color: #ea4335; font-weight: 600;">${l}</div>`;
+                        }
+                        return l;
+                    }).join('<br>');
+                    
+                    // 로그 추가 및 위협 정보 파싱
+                    data.logs.forEach(l => {
+                        // JSON 형식의 위협 정보 추출 시도
+                        const jsonMatch = l.match(/\| ({.*})$/);
+                        if(jsonMatch) {
+                            try {
+                                const threatData = JSON.parse(jsonMatch[1]);
+                                if(threatData.type === 'THREAT_DETECTED') {
+                                    addLog(threatData.name, 'threat', {
+                                        name: threatData.name,
+                                        severity: threatData.severity,
+                                        attack_type: threatData.attack_type,
+                                        description: threatData.description
+                                    });
+                                    return; // 스킵 (중복 로그 방지)
+                                }
+                            } catch(e) {
+                                // JSON 파싱 실패 시 계속
+                            }
+                        }
+                        
+                        // 일반 로그 처리
+                        if(l.includes('🚨 위협 탐지:')) {
+                            // 구형 로그 형식 호환성
+                            const match = l.match(/🚨 위협 탐지: (.+?) \(위험도: (\d+)\/100\)/);
+                            if(match) {
+                                addLog(match[1], 'threat', {
+                                    name: match[1],
+                                    severity: parseInt(match[2]),
+                                    attack_type: 'Prompt Injection',
+                                    description: 'AI 시스템 공격 시도 감지됨'
+                                });
+                            }
+                        } else if(l.includes('✅')) {
+                            addLog(l, 'success');
+                        } else if(l.includes('⚠️')) {
+                            addLog(l, 'warning');
+                        } else if(l.includes('❌')) {
+                            addLog(l, 'error');
+                        } else {
+                            addLog(l, 'info');
+                        }
+                    });
+                }
+
+                // 분석 완료 후 접기
+                ui.processBox.classList.add('collapsed');
+                ui.finalResponse.innerHTML = marked.parse(data.response);
+                
+                if(data.blocked) {
+                    ui.finalResponse.style.color = '#ea4335';
+                    ui.finalResponse.style.fontWeight = 'bold';
+                    addLog('분석 결과: 보안 위협 탐지됨 (차단)', 'error');
+                }
+
+            } catch(e) {
+                const errMsg = e.name === 'AbortError' ? "요청 대기 시간(60초)을 초과했습니다. API 쿼터나 네트워크를 확인해 주세요." : e.message;
+                ui.processContent.innerHTML += `<br><span style="color: #ea4335;">[Error] ${errMsg}</span>`;
+                ui.processBox.classList.remove('collapsed');
+                ui.finalResponse.innerHTML = `<p style="color: #ea4335;">❌ 분석에 실패했습니다.</p>`;
+                addLog("Error: " + errMsg, 'error');
+            } finally {
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
+        }
+
+        sendBtn.onclick = handleSend;
+        msgInput.onkeypress = (e) => { if(e.key === 'Enter') handleSend(); };
+        
+        // API 키 입력 필드 이벤트 리스너 - 반응성 개선 (input 이벤트 사용)
+        document.getElementById('apiKey').addEventListener('input', () => {
+            const newApiKey = document.getElementById('apiKey').value.trim();
+            if(newApiKey && newApiKey.length > 10) { // 적정 길이 이상일 때만 로드
+                if(newApiKey !== currentApiKey) {
+                    currentApiKey = newApiKey;
+                    loadSavedLogsList();
+                    addLog("API 키가 인식되었습니다. 저장된 기록을 확인하세요.", "success");
+                }
+            } else {
+                currentApiKey = '';
+                document.getElementById('savedLogsList').innerHTML = '<div style="color: var(--text-sub);">API 키를 입력하세요.</div>';
+            }
+        });
+
+        // 초기 안내 로그 추가
+        window.onload = () => {
+            addLog("AntiGravity v5.0 엔진 대기 중...", "info");
+            addLog("과거 기록을 보려면 상단에 API Key를 입력하세요.", "warning");
+        };
+    </script>
+</body>
+</html>
